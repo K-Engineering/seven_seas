@@ -1,0 +1,538 @@
+<!--
+BEST keycode ref: http://keycode.info/
+-->
+
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>three.js webgl - geometry - terrain</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+        <style>
+            body {
+                color: #000;
+                font-family:Monospace;
+                font-size:13px;
+                margin: 0px;
+                overflow: hidden;
+            }
+
+            #info {
+                position: absolute;
+                top: 0px; width: 100%;
+                text-align:center;
+                padding: 5px;
+            }
+
+            a {
+
+                color: #a06851;
+            }
+            #stats { position: absolute; top: 0; left: 0 }
+
+        </style>
+    </head>
+    <body>
+
+        <div id="info"><a href="http://threejs.org" target="_blank">three.js</a> - webgl ocean demo</div>
+
+        <script src="js/libs/three.js/three.min.js"></script>
+        <script src="js/libs/three.js/OrbitControls.js"></script>
+        <script src="js/libs/three.js/FirstPersonControls.js"></script>
+        <script src="js/libs/three.js/Mirror.js"></script>
+        <script src="js/libs/three.js/WaterShader.js"></script>
+        <script src="js/libs/three.js/DDSLoader.js"></script>
+        <script src="js/libs/three.js/MTLLoader.js"></script>
+        <script src="js/libs/three.js/OBJLoader.js"></script>
+        <script src="js/libs/three.js/Detector.js"></script>
+        <script src="js/libs/three.js/stats.min.js"></script>
+        <script>
+
+            if (!Detector.webgl) {
+
+                Detector.addGetWebGLMessage();
+                document.getElementById('container').innerHTML = "";
+
+            }
+
+            var container;
+            var camera, scene, renderer;
+            var clock = new THREE.Clock();
+            //var sphere;
+            var boat;
+            var waveCounter = 0;
+            var airplane;
+            var airplaneSpeedX = 0.0;
+            var airplaneSpeedY = 0.0;
+            var airplaneSpeedZ = 0.0;
+            var airplaneRotationX = 0.0;
+            var airplaneRotationY = 0.0;
+            var airplaneRotationZ = 0.0;
+            var airplaneTranslationX = 0.0;
+            var airplaneTranslationY = 2.0;
+            var airplaneTranslationZ = -20.0;
+            doAileronRoll = 0;
+
+            var cameraTranslationX = 0.0;
+            var cameraTranslationY = 5.0;
+            var cameraTranslationZ = 0.0;
+
+            var stats = new Stats();
+            document.body.appendChild(stats.domElement);
+
+            var parameters = {
+                width: 2000,
+                height: 2000,
+                widthSegments: 250,
+                heightSegments: 250,
+                depth: 1500,
+                param: 4,
+                filterparam: 1
+            };
+
+            var waterNormals;
+
+            var haveEvents = 'ongamepadconnected' in window;
+            var controllers = {};
+
+            init();
+            animate();
+
+            function init() {
+
+                container = document.createElement('div');
+                document.body.appendChild(container);
+
+                renderer = new THREE.WebGLRenderer();
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                container.appendChild(renderer.domElement);
+
+                scene = new THREE.Scene();
+
+                camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1.0, 3000000);
+                camera.position.set(cameraTranslationX, cameraTranslationY, cameraTranslationZ);
+
+                //controls = new THREE.OrbitControls( camera, renderer.domElement );
+                //controls.enablePan = false;
+                //controls.minDistance = 1000.0;
+                //controls.maxDistance = 5000.0;
+                //controls.maxPolarAngle = Math.PI * 0.495;
+                //controls.target.set( 0, 500, 0 );
+                //controls = new THREE.FirstPersonControls(camera);
+                //controls.movementSpeed = 10.0;
+                //controls.lookSpeed = 0.2;
+                //controls.lookVertical = true;
+
+                scene.add(new THREE.AmbientLight(0x444444));
+
+                var light = new THREE.DirectionalLight(0xffffbb, 1); //james shut this off
+                light.position.set(-1, 1, -1);
+                //scene.add(light);
+
+                var ambient = new THREE.AmbientLight(0xffffff);
+                scene.add(ambient);
+
+                waterNormals = new THREE.TextureLoader().load('res/waternormals.jpg');
+                waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
+
+                water = new THREE.Water(renderer, camera, scene, {
+                    textureWidth: 512,
+                    textureHeight: 512,
+                    waterNormals: waterNormals,
+                    alpha: 1.0,
+                    sunDirection: light.position.clone().normalize(),
+                    sunColor: 0xffffff,
+                    waterColor: 0x001e0f,
+                    distortionScale: 50.0
+                });
+
+
+                mirrorMesh = new THREE.Mesh(
+                        new THREE.PlaneBufferGeometry(parameters.width * 500, parameters.height * 500),
+                        water.material
+                        );
+
+                mirrorMesh.add(water);
+                mirrorMesh.rotation.x = -Math.PI * 0.5;
+                scene.add(mirrorMesh);
+
+
+                // load skybox
+
+                var cubeMap = new THREE.CubeTexture([]);
+                cubeMap.format = THREE.RGBFormat;
+
+                var loader = new THREE.ImageLoader();
+                loader.load('res/skyboxsun25degtest.png', function (image) {
+
+                    var getSide = function (x, y) {
+
+                        var size = 1024;
+
+                        var canvas = document.createElement('canvas');
+                        canvas.width = size;
+                        canvas.height = size;
+
+                        var context = canvas.getContext('2d');
+                        context.drawImage(image, -x * size, -y * size);
+
+                        return canvas;
+
+                    };
+
+                    cubeMap.images[ 0 ] = getSide(2, 1); // px
+                    cubeMap.images[ 1 ] = getSide(0, 1); // nx
+                    cubeMap.images[ 2 ] = getSide(1, 0); // py
+                    cubeMap.images[ 3 ] = getSide(1, 2); // ny
+                    cubeMap.images[ 4 ] = getSide(1, 1); // pz
+                    cubeMap.images[ 5 ] = getSide(3, 1); // nz
+                    cubeMap.needsUpdate = true;
+
+                });
+
+                var cubeShader = THREE.ShaderLib[ 'cube' ];
+                cubeShader.uniforms[ 'tCube' ].value = cubeMap;
+
+                var skyBoxMaterial = new THREE.ShaderMaterial({
+                    fragmentShader: cubeShader.fragmentShader,
+                    vertexShader: cubeShader.vertexShader,
+                    uniforms: cubeShader.uniforms,
+                    depthWrite: false,
+                    side: THREE.BackSide
+                });
+
+                var skyBox = new THREE.Mesh(
+                        new THREE.BoxGeometry(1000000, 1000000, 1000000),
+                        skyBoxMaterial
+                        );
+
+                scene.add(skyBox);
+
+
+                var geometry = new THREE.IcosahedronGeometry(400, 4);
+
+                for (var i = 0, j = geometry.faces.length; i < j; i++) {
+
+                    geometry.faces[ i ].color.setHex(Math.random() * 0xffffff);
+
+                }
+
+                var material = new THREE.MeshPhongMaterial({
+                    vertexColors: THREE.FaceColors,
+                    shininess: 100,
+                    envMap: cubeMap
+                });
+
+                //sphere = new THREE.Mesh( geometry, material );
+                //scene.add( sphere );
+                //START load procedure---------------------------------------------------
+                var onProgress = function (xhr) {
+                    if (xhr.lengthComputable) {
+                        var percentComplete = xhr.loaded / xhr.total * 100;
+                        console.log(Math.round(percentComplete, 2) + '% downloaded');
+                    }
+                };
+
+                var onError = function (xhr) { };
+
+                THREE.Loader.Handlers.add(/\.dds$/i, new THREE.DDSLoader());
+
+                var mtlLoader = new THREE.MTLLoader();
+                mtlLoader.setBaseUrl('res/F-5E_Tiger_II/');
+                mtlLoader.setPath('res/F-5E_Tiger_II/');
+                mtlLoader.load('Tiger5.mtl', function (materials) {
+
+                    materials.preload();
+
+                    var objLoader = new THREE.OBJLoader();
+                    objLoader.setMaterials(materials);
+                    objLoader.setPath('res/F-5E_Tiger_II/');
+                    objLoader.load('Tiger5.obj', function (object) {
+
+                        airplane = object;
+                        airplane.position.y = 2.0;
+                        airplane.position.z = -30.0;
+                        scene.add(airplane);
+
+                    }, onProgress, onError);
+
+                });
+
+                // load boat
+                var mtlLoader2 = new THREE.MTLLoader();
+                mtlLoader2.setBaseUrl('res/Warhorse_Patrol_Boat/');
+                mtlLoader2.setPath('res/Warhorse_Patrol_Boat/');
+                mtlLoader2.load('Warhorse_Patrol_Boat.mtl', function (materials) {
+
+                    materials.preload();
+
+                    var objLoader2 = new THREE.OBJLoader();
+                    objLoader2.setMaterials(materials);
+                    objLoader2.setPath('res/Warhorse_Patrol_Boat/');
+                    objLoader2.load('Warhorse_Patrol_Boat.obj', function (object) {
+
+                        boat = object;
+                        boat.position.y = -1.0;
+                        boat.position.z = -30.0;
+                        scene.add(boat);
+
+                    }, onProgress, onError);
+
+                });
+
+                //END of load procedure---------------------------------------------------
+
+                document.addEventListener("keydown", onDocumentKeyDown, false);
+                var audio = new Audio('res/aircraft003.mp3');
+                audio.play();
+
+            }//END init()
+
+            function onDocumentKeyDown(event) {
+
+                // Get the key code of the pressed key 
+                var keyCode = event.which;
+
+                // Cursor up
+                if (keyCode === 38) {
+                    //console.log("ARROW UP");
+                    airplaneSpeedZ -= 0.01;
+
+                    // Cursor down 
+                } else if (keyCode === 40) {
+                    airplaneSpeedZ += 0.01;
+
+                    // Cursor left 
+                } else if (keyCode === 37) {
+                    airplaneSpeedX -= 0.01;
+
+                    // Cursor right 
+                } else if (keyCode === 39) {
+                    airplaneSpeedX += 0.01;
+
+                    // Page up 
+                } else if (keyCode === 33) {
+                    airplaneSpeedY -= 0.2;
+
+                    if (airplane.rotation.x <= Math.PI / 2) {
+                        airplaneSpeedZ += 0.05;
+                    } else {
+                        airplaneSpeedZ = -airplaneSpeedZ;
+                    }
+
+                    if (airplane.rotation.x <= Math.PI) {
+                        ;//airplaneSpeedY is fine
+                    } else {
+                        //FIXME: this is a hack fix, and sort of busted
+                        airplaneSpeedZ += 7.0; //+0.2 extra to undo prev
+                        airplaneSpeedY += 7.0;
+                    }
+
+                    console.log("Rotation: " + airplane.rotation.x);
+
+                    // Page down 
+                } else if (keyCode === 34) {
+                    airplaneSpeedY += 0.2;
+                    airplaneSpeedZ -= 0.05;
+                    console.log("Rotation: " + airplane.rotation.x);
+
+                    // CTRL
+                } else if (keyCode === 17) {
+                    if (doAileronRoll === 0) {
+                        doAileronRoll = 0.1;
+                    } else {
+                        doAileronRoll = 0;
+                    }
+                }
+            }
+
+
+function updateStatus() {
+                if (!haveEvents) {
+                    scangamepads();
+                }
+
+                var i = 0;
+                var j;
+
+                for (j in controllers) {
+                    var controller = controllers[j];
+
+                    for (i = 0; i < controller.buttons.length; i++) {
+                        var val = controller.buttons[i];
+                        var pressed = val === 1.0;
+                        if (typeof (val) === "object") {
+                            pressed = val.pressed;
+                            val = val.value;
+                        }
+
+                        if (pressed) {
+                            console.log("button pressed: " + i);
+                            var str = "1";
+                        } else {
+                            console.log("button");
+                        }
+                    }
+
+                    for (i = 0; i < controller.axes.length; i++) {
+                        console.log("axes: " + controller.axes[i] + 1);
+                    }
+                }
+
+                //requestAnimationFrame(updateStatus);
+            }
+
+            //
+
+            function animate() {
+
+                requestAnimationFrame(animate);
+                requestAnimationFrame(updateStatus);
+
+
+                //----------------------------------------------------------
+
+                //----------------------------------------------------------
+                //controls.update(clock.getDelta());
+                //if(airplane !== null)
+                //airplane.position.z -= 0.009;
+                if (doAileronRoll !== 0) {
+                    doAileronRoll += 0.1;
+                }
+
+                if (typeof (airplane) !== null)
+                {
+                    //airplane.position.z -= airplaneTranslationZ;
+                    airplane.rotation.set(airplaneRotationX - airplaneSpeedY,
+                            airplaneRotationY - airplaneSpeedX,
+                            airplaneRotationZ - airplaneSpeedX - doAileronRoll);
+
+                    airplane.position.set(airplaneTranslationX += airplaneSpeedX,
+                            airplaneTranslationY -= airplaneSpeedY,
+                            airplaneTranslationZ += airplaneSpeedZ);
+
+
+                    camera.position.set(cameraTranslationX += airplaneSpeedX,
+                            cameraTranslationY -= airplaneSpeedY,
+                            cameraTranslationZ += airplaneSpeedZ);
+                }
+
+
+                render();
+
+            }
+
+
+            function render() {
+
+                var time = performance.now() * 0.001;
+
+                //console.log("Pos: " + (Math.sin( time )/4 - 1.2) );
+                boat.position.y = (Math.sin(time) / 4 - 1.2);
+                boat.rotation.x = (Math.sin(time) / 20);
+                boat.rotation.z = (Math.sin(time) / 20);
+
+
+                water.material.uniforms.time.value += 1.0 / 60.0;
+                //controls.update();
+                water.render();
+                stats.update();
+                renderer.render(scene, camera);
+            }
+
+
+            function setAirplaneSpeedZ(speed) {
+                airplaneSpeedZ = rosToThree(speed);
+            }
+
+            function rosToThree(speed) {
+                return speed / 10;
+            }
+
+
+
+
+            function scangamepads() {
+                var gamepads = navigator.getGamepads ? navigator.getGamepads() : (navigator.webkitGetGamepads ? navigator.webkitGetGamepads() : []);
+                console.log("number of gamepads connected: " + gamepads.length);
+                for (var i = 0; i < gamepads.length; i++) {
+                    if (gamepads[i]) {
+                        if (gamepads[i].index in controllers) {
+                            controllers[gamepads[i].index] = gamepads[i];
+                        } else {
+                            addgamepad(gamepads[i]);
+                        }
+                    }
+                }
+                console.log("@scangamepads()");
+            }
+
+            function connecthandler(e) {
+                addgamepad(e.gamepad);
+            }
+
+            function addgamepad(gamepad) {
+                controllers[gamepad.index] = gamepad;
+
+                //var d = document.createElement("div");
+                //d.setAttribute("id", "controller" + gamepad.index);
+
+                //var t = document.createElement("h1");
+                //t.appendChild(document.createTextNode("gamepad: " + gamepad.id));
+                //d.appendChild(t);
+                
+
+                //var b = document.createElement("div");
+                //b.className = "buttons";
+                /*for (var i = 0; i < gamepad.buttons.length; i++) {
+                    var e = document.createElement("span");
+                    e.className = "button";
+                    //e.id = "b" + i;
+                    //e.innerHTML = i + ": <p></p>";
+                    console.log("adding btn: " + i);
+                    document.getElementById('btn_' + i).innerHTML += "0";
+                    b.appendChild(e);
+                }
+
+                d.appendChild(b);
+*/
+/*                var a = document.createElement("div");
+                a.className = "axes";
+
+                for (var i = 0; i < gamepad.axes.length; i++) {
+                    var p = document.createElement("progress");
+                    p.className = "axis";
+                    //p.id = "a" + i;
+                    p.setAttribute("max", "2");
+                    p.setAttribute("value", "1");
+                    p.innerHTML = i;
+                    a.appendChild(p);
+                }
+
+                d.appendChild(a);
+
+                // See https://github.com/luser/gamepadtest/blob/master/index.html
+                var start = document.getElementById("start");
+                if (start) {
+                    start.style.display = "none";
+                }
+
+                document.body.appendChild(d);
+                requestAnimationFrame(updateStatus);*/
+            }
+
+            function disconnecthandler(e) {
+                removegamepad(e.gamepad);
+            }
+
+            window.addEventListener("gamepadconnected", connecthandler);
+            window.addEventListener("gamepaddisconnected", disconnecthandler);
+
+            if (!haveEvents) {
+                setInterval(scangamepads, 500);
+            }
+        </script>
+    </body>
+</html>
